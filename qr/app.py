@@ -7,7 +7,7 @@ import base64
 from datetime import datetime
 
 # --- CONFIG ---
-IMGBB_API_KEY = "YOUR_IMGBB_API_KEY_HERE"
+IMGBB_API_KEY = "61ab5b00864c4a595c0039eb6cce27e9"
 
 class CompanyPDF(FPDF):
     def header(self):
