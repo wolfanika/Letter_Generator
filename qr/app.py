@@ -4,7 +4,6 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 import os
 from datetime import datetime
-import base64
 
 # --- PDF CLASS ---
 class CompanyPDF(FPDF):
@@ -16,34 +15,33 @@ class CompanyPDF(FPDF):
         if os.path.exists('footer.png'):
             self.image('footer.png', 10, 265, 190)
 
-# --- WEB UI ---
-st.set_page_config(page_title="Letter Gen", page_icon="📝")
 st.title("UCPL Official Letter Generator")
-st.info("Direct Mode: No cloud upload required. The QR code contains the letter data directly!")
 
-ref_no = st.text_input("Reference Number", "RUSL/UCPL/2026/005")
-body_text = st.text_area("Letter Writing", height=250)
+# Instructions
+st.info("Direct Link Mode: No automated upload to fail. Simply paste your Drive Folder link.")
 
-# ... [rest of your code above stays the same] ...
+# Inputs
+ref_no = st.text_input("Reference Number", "RUSL/UCPL/2026/001")
+folder_link = st.text_input("Google Drive Folder Link (Paste once and keep it):")
+body_text = st.text_area("Letter Content:", height=300)
 
-if st.button("Generate Final PDF"):
-    if not body_text:
-        st.error("Please enter the letter text!")
+if st.button("Generate Official PDF"):
+    if not body_text or not folder_link:
+        st.error("Please provide both content and your Drive Folder link.")
     else:
-        with st.spinner("Creating PDF..."):
-            # Create a "Text-Only" version for the QR code
-            qr_data = f"REF: {ref_no}\nDATE: {datetime.now().strftime('%B %d, %Y')}\n\n{body_text}"
+        with st.spinner("Building PDF..."):
+            file_name = f"Letter_{ref_no.replace('/', '_')}.pdf"
             
-            # 1. Create the Final PDF
             pdf = CompanyPDF()
             pdf.add_page()
             
-            # Generate QR from the text data (No Link Needed!)
+            # 1. Generate QR that points to the folder where the file will live
             qr = qrcode.QRCode(box_size=10, border=1)
-            qr.add_data(qr_data)
+            qr.add_data(folder_link)
             qr.make(fit=True)
             qr.make_image(fill_color="black", back_color="white").save("qr.png")
             
+            # 2. Build the PDF
             pdf.image("qr.png", 170, 50, 25, 25)
             pdf.set_font("Helvetica", 'B', 11)
             pdf.cell(0, 10, f"Ref: {ref_no}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -52,18 +50,13 @@ if st.button("Generate Final PDF"):
             pdf.ln(5)
             pdf.multi_cell(0, 7, body_text)
             
-            # THE FIX: Simply call pdf.output() with nothing inside the parentheses.
-            # In fpdf2, this returns the PDF as bytes automatically.
+            # 3. Output
             final_pdf_bytes = pdf.output()
             
-            st.success("PDF Generated Successfully!")
+            st.success("PDF Created Successfully!")
             st.download_button(
-                label="📥 Download Official PDF",
-                data=final_pdf_bytes,  # Use the bytes directly here
-                file_name=f"Letter_{ref_no.replace('/', '_')}.pdf",
+                label="📥 Download PDF",
+                data=final_pdf_bytes,
+                file_name=file_name,
                 mime="application/pdf"
             )
-            
-            # Cleanup temp file
-            if os.path.exists("qr.png"):
-                os.remove("qr.png")
