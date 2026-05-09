@@ -47,7 +47,6 @@ if st.button("Generate Official PDF"):
                 pdf.add_page()
                 
                 # 2. Create the Verification QR (Direct Data Mode)
-                # This encodes the letter details directly into the QR
                 verify_info = f"UCPL OFFICIAL RECORD\nRef: {ref_no}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nVerified via UCPL System."
                 
                 qr = qrcode.QRCode(version=1, box_size=10, border=1)
@@ -57,13 +56,12 @@ if st.button("Generate Official PDF"):
                 qr_img.save("temp_qr.png")
 
                 # 3. Add QR and Text to PDF
-                # Placing QR on the top right
                 pdf.image("temp_qr.png", 170, 50, 25, 25)
                 
                 pdf.set_font("Helvetica", 'B', 11)
-                pdf.cell(0, 10, f"Ref: {ref_no}", ln=True)
+                pdf.cell(0, 10, f"Ref: {ref_no}", new_x="LMARGIN", new_y="NEXT")
                 pdf.set_font("Helvetica", '', 11)
-                pdf.cell(0, 10, f"Date: {datetime.now().strftime('%B %d, %Y')}", ln=True)
+                pdf.cell(0, 10, f"Date: {datetime.now().strftime('%B %d, %Y')}", new_x="LMARGIN", new_y="NEXT")
                 pdf.ln(10)
                 
                 # Letter Content
@@ -73,7 +71,7 @@ if st.button("Generate Official PDF"):
                 # 4. Final Output Processing
                 pdf_output = pdf.output()
                 
-                # CRITICAL: Convert to bytes for Streamlit download button
+                # Convert to bytes for Streamlit
                 if isinstance(pdf_output, (bytearray, list)):
                     final_pdf_bytes = bytes(pdf_output)
                 else:
@@ -95,16 +93,3 @@ if st.button("Generate Official PDF"):
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-
----
-
-### Final Checklist for GitHub:
-1.  **`app.py`**: Save the code above as this file.
-2.  **`header.png`**: Upload this to the same folder on GitHub (lowercase name).
-3.  **`footer.png`**: Upload this to the same folder on GitHub (lowercase name).
-4.  **`requirements.txt`**: Ensure it has these 4 lines:
-    ```text
-    streamlit
-    fpdf2
-    qrcode
-    pillow
