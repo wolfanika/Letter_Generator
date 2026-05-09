@@ -2,66 +2,109 @@ import streamlit as st
 import qrcode
 from fpdf import FPDF
 import os
-import requests
-import base64
 from datetime import datetime
 
-# --- CONFIG ---
-IMGBB_API_KEY = "61ab5b00864c4a595c0039eb6cce27e9"
-
+# --- PDF GENERATION CLASS ---
 class CompanyPDF(FPDF):
     def header(self):
+        # Using absolute paths to find images on the server
         base_path = os.path.dirname(os.path.abspath(__file__))
         header_path = os.path.join(base_path, "header.png")
+        
         if os.path.exists(header_path):
+            # Left: 10mm, Top: 8mm, Width: 190mm
             self.image(header_path, 10, 8, 190)
-        self.ln(45)
+        else:
+            st.sidebar.warning("Header image not found on GitHub!")
+        self.ln(45) # Gap after header
+
     def footer(self):
         base_path = os.path.dirname(os.path.abspath(__file__))
         footer_path = os.path.join(base_path, "footer.png")
+        
         if os.path.exists(footer_path):
+            # Position at 265mm from top (for A4)
             self.image(footer_path, 10, 265, 190)
+        else:
+            st.sidebar.warning("Footer image not found on GitHub!")
 
-st.title("UCPL Instant QR Letter System")
+# --- APP INTERFACE ---
+st.set_page_config(page_title="UCPL Letter System", page_icon="📝")
+st.title("UCPL Official Letter Generator")
 
-ref_no = st.text_input("Reference Number", "RUSL/UCPL/2026/015")
-body_text = st.text_area("Letter Content:", height=250)
+# Inputs
+ref_no = st.text_input("Reference Number", "RUSL/UCPL/2026/001")
+body_text = st.text_area("Letter Body Content:", height=300)
 
-if st.button("Generate & Automate"):
-    if not body_text or IMGBB_API_KEY == "YOUR_IMGBB_API_KEY_HERE":
-        st.error("Missing content or API Key!")
+if st.button("Generate Official PDF"):
+    if not body_text:
+        st.error("Please enter the letter content first!")
     else:
-        with st.spinner("Processing..."):
-            # 1. Create a "Preview" PDF to turn into a link
-            # For simplicity, we upload the QR data as a text-image or a simple host
-            # Most scanners just need a URL or the direct text
-            
-            # Let's use the 'Direct Text' QR but host it as a backup
-            verification_text = f"UCPL OFFICIAL RECORD\nRef: {ref_no}\nDate: {datetime.now()}\n\nContent: {body_text[:100]}..."
-            
-            # 2. Setup the Final PDF
-            pdf = CompanyPDF()
-            pdf.add_page()
-            
-            # Since uploading a full PDF to a temporary host is tricky,
-            # we make the QR code a 'Verification Link' to a text-based host
-            # Or simply encode the text directly into the QR (The most reliable way)
-            
-            qr = qrcode.QRCode(box_size=10, border=1)
-            qr.add_data(verification_text)
-            qr.make(fit=True)
-            qr.make_image().save("qr.png")
-            
-            pdf.image("qr.png", 170, 50, 25, 25)
-            pdf.set_font("Helvetica", 'B', 11)
-            pdf.cell(0, 10, f"Ref: {ref_no}", ln=True)
-            pdf.set_font("Helvetica", '', 11)
-            pdf.cell(0, 10, f"Date: {datetime.now().strftime('%B %d, %Y')}", ln=True)
-            pdf.ln(5)
-            pdf.multi_cell(0, 7, body_text)
-            
-            # Force to bytes for Streamlit
-            final_pdf = bytes(pdf.output())
-            
-            st.success("PDF Generated with Embedded Verification!")
-            st.download_button("Download Official PDF", final_pdf, f"{ref_no}.pdf")
+        with st.spinner("Creating PDF..."):
+            try:
+                # 1. Create the PDF object
+                pdf = CompanyPDF(orientation='P', unit='mm', format='A4')
+                pdf.add_page()
+                
+                # 2. Create the Verification QR (Direct Data Mode)
+                # This encodes the letter details directly into the QR
+                verify_info = f"UCPL OFFICIAL RECORD\nRef: {ref_no}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nVerified via UCPL System."
+                
+                qr = qrcode.QRCode(version=1, box_size=10, border=1)
+                qr.add_data(verify_info)
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="black", back_color="white")
+                qr_img.save("temp_qr.png")
+
+                # 3. Add QR and Text to PDF
+                # Placing QR on the top right
+                pdf.image("temp_qr.png", 170, 50, 25, 25)
+                
+                pdf.set_font("Helvetica", 'B', 11)
+                pdf.cell(0, 10, f"Ref: {ref_no}", ln=True)
+                pdf.set_font("Helvetica", '', 11)
+                pdf.cell(0, 10, f"Date: {datetime.now().strftime('%B %d, %Y')}", ln=True)
+                pdf.ln(10)
+                
+                # Letter Content
+                pdf.set_font("Helvetica", '', 11)
+                pdf.multi_cell(0, 7, body_text)
+
+                # 4. Final Output Processing
+                pdf_output = pdf.output()
+                
+                # CRITICAL: Convert to bytes for Streamlit download button
+                if isinstance(pdf_output, (bytearray, list)):
+                    final_pdf_bytes = bytes(pdf_output)
+                else:
+                    final_pdf_bytes = pdf_output
+
+                st.success("✅ PDF Generated Successfully!")
+                
+                # 5. The Download Button
+                st.download_button(
+                    label="📥 Download Official PDF",
+                    data=final_pdf_bytes,
+                    file_name=f"UCPL_{ref_no.replace('/', '_')}.pdf",
+                    mime="application/pdf"
+                )
+
+                # Cleanup
+                if os.path.exists("temp_qr.png"):
+                    os.remove("temp_qr.png")
+
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+
+---
+
+### Final Checklist for GitHub:
+1.  **`app.py`**: Save the code above as this file.
+2.  **`header.png`**: Upload this to the same folder on GitHub (lowercase name).
+3.  **`footer.png`**: Upload this to the same folder on GitHub (lowercase name).
+4.  **`requirements.txt`**: Ensure it has these 4 lines:
+    ```text
+    streamlit
+    fpdf2
+    qrcode
+    pillow
