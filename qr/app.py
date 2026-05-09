@@ -17,7 +17,7 @@ class CompanyPDF(FPDF):
             self.image('footer.png', 10, 265, 190)
 
 # --- WEB UI ---
-st.set_page_config(page_title="UCPL Letter Gen", page_icon="📝")
+st.set_page_config(page_title="Letter Gen", page_icon="📝")
 st.title("UCPL Official Letter Generator")
 st.info("Direct Mode: No cloud upload required. The QR code contains the letter data directly!")
 
