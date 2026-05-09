@@ -8,14 +8,22 @@ from datetime import datetime
 # --- PDF CLASS ---
 class CompanyPDF(FPDF):
     def header(self):
-        if os.path.exists('header.png'):
-            self.image('header.png', 10, 8, 190)
+        # Get the directory where app.py is located
+        curr_dir = os.path.dirname(__file__)
+        header_path = os.path.join(curr_dir, 'header.png')
+        
+        if os.path.exists(header_path):
+            # 10=left, 8=top, 190=width
+            self.image(header_path, 10, 8, 190)
         self.ln(45)
-    def footer(self):
-        if os.path.exists('footer.png'):
-            self.image('footer.png', 10, 265, 190)
 
-st.title("UCPL Official Letter Generator")
+    def footer(self):
+        curr_dir = os.path.dirname(__file__)
+        footer_path = os.path.join(curr_dir, 'footer.png')
+        
+        if os.path.exists(footer_path):
+            # 10=left, 265=from top (for A4), 190=width
+            self.image(footer_path, 10, 265, 190)
 
 # Instructions
 st.info("Direct Link Mode: No automated upload to fail. Simply paste your Drive Folder link.")
