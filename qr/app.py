@@ -10,9 +10,9 @@ from datetime import datetime
 # Using Streamlit Secrets to prevent 401 Unauthorized Errors
 try:
     cloudinary.config( 
-      cloud_name = st.secrets["CLOUDINARY_NAME"], 
-      api_key = st.secrets["CLOUDINARY_KEY"], 
-      api_secret = st.secrets["CLOUDINARY_SECRET"] 
+      cloud_name = st.secrets["drqgppww9"], 
+      api_key = st.secrets["216228229691118"], 
+      api_secret = st.secrets["b_Eox2_xb3eBlwzhbQ1FZTqjIyk"] 
     )
 except Exception:
     st.error("Cloudinary Secrets are missing! Please add them in Streamlit Settings.")
