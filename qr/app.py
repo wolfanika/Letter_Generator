@@ -52,7 +52,7 @@ if st.button("Generate & Host Official PDF"):
             # 2. Upload to Cloudinary
             upload_result = cloudinary.uploader.upload(
                 pdf_bytes, 
-                resource_type = "raw", 
+                resource_type = "auto", 
                 public_id = f"UCPL_{ref_no.replace('/', '_')}",
                 format = "pdf"
             )
