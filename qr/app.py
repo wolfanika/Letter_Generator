@@ -28,7 +28,7 @@ ref_no = st.text_input("Reference Number", "RUSL/UCPL/2026/015")
 body_text = st.text_area("Letter Content:", height=250)
 
 if st.button("Generate & Automate"):
-    if not body_text or IMGBB_API_KEY == "YOUR_IMGBB_API_KEY_HERE":
+    if not body_text or IMGBB_API_KEY == "61ab5b00864c4a595c0039eb6cce27e9":
         st.error("Missing content or API Key!")
     else:
         with st.spinner("Processing..."):
