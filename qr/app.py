@@ -50,13 +50,19 @@ if st.button("Generate Official PDF"):
             pdf.ln(5)
             pdf.multi_cell(0, 7, body_text)
             
-            # 3. Output
-            final_pdf_bytes = pdf.output()
+           # Force the output into a standard bytes format
+            final_pdf_raw = pdf.output()
             
+            # This is the important part: convert to bytes
+            if isinstance(final_pdf_raw, bytearray):
+                final_pdf_bytes = bytes(final_pdf_raw)
+            else:
+                final_pdf_bytes = final_pdf_raw
+
             st.success("PDF Created Successfully!")
             st.download_button(
                 label="📥 Download PDF",
-                data=final_pdf_bytes,
+                data=final_pdf_bytes, # Now Streamlit will accept it
                 file_name=file_name,
                 mime="application/pdf"
             )
