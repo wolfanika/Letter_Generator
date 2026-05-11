@@ -53,7 +53,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
         qr.make_image().save(img_buffer)
         pdf.image(img_buffer, 12, 55, 22, 22)
     
-    # 2. Ref (Starts after QR) & Date (Far Right)
+    # 2. Ref & Date Headers
     pdf.set_font("Times", 'B', 11)
     pdf.set_y(55)
     pdf.set_x(42) 
@@ -61,7 +61,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
     
     pdf.set_x(140)
     pdf.cell(55, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
-    pdf.ln(12)
+    pdf.ln(15) 
     
     # 3. Content Body
     pdf.set_font("Times", '', 11)
@@ -70,6 +70,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
         pdf.ln(5)
     
     if table_raw.strip():
+        # Corrected variable name from 'table_data' to 'table_raw'
         rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_raw.strip().split('\n')]
         with pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
             for d_row in rows:
@@ -85,42 +86,52 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
 # --- STREAMLIT APP ---
 st.set_page_config(page_title="UCPL Letter Editor", layout="wide")
 
-col_input, col_preview = st.columns([1, 1])
+# Custom CSS to fix iframe height
+st.markdown("""<style>iframe {border-radius: 10px; border: 1px solid #ddd;}</style>""", unsafe_allow_html=True)
+
+col_input, col_preview = st.columns([1, 1.2])
 
 with col_input:
     st.title("📜 Letter Editor")
     ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
-    intro_text = st.text_area("Introduction Content:", height=180, value="To,\nChief Executive Officer (CEO)\nUnited Chattogram Power Ltd. (UCPL)")
-    table_data = st.text_area("Table Data (Optional):", height=100)
-    closing_text = st.text_area("Closing Content:", height=150)
+    intro_text = st.text_area("1. Intro (Address, Subject, etc.):", height=180, value="To,\nCEO, UCPL")
+    table_data = st.text_area("2. Table (Optional):", height=100)
+    closing_text = st.text_area("3. Closing (Body, Sign-off):", height=150)
 
     generate_btn = st.button("🚀 Upload & Finalize Letter")
 
-# --- PREVIEW LOGIC ---
-# Using a placeholder URL for real-time previewing
-preview_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
-base64_pdf = base64.b64encode(preview_bytes).decode('utf-8')
-pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+# --- IMPROVED PREVIEW LOGIC ---
+try:
+    preview_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
+    base64_pdf = base64.b64encode(preview_bytes).decode('utf-8')
+    
+    # Increased height and added #toolbar=0 to make it cleaner
+    pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}#toolbar=0&navpanes=0&scrollbar=0" width="100%" height="1000" type="application/pdf">'
 
-with col_preview:
-    st.markdown("### 🖥️ Live Preview")
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    with col_preview:
+        st.markdown("### 🖥️ Live Preview")
+        st.markdown(pdf_display, unsafe_allow_html=True)
+except Exception as e:
+    with col_preview:
+        st.error(f"Preview could not be generated: {e}")
 
 # --- UPLOAD ACTION ---
 if generate_btn:
-    with st.spinner("Uploading to Server..."):
-        safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
-        
-        # Pass 1: Upload placeholder to get the public link
-        # (The syntax error was here—it's fixed now!)
-        temp_link = upload_to_cpanel(preview_bytes, safe_name)
-        
-        if temp_link:
-            # Pass 2: Re-generate with the ACTUAL link in the QR
-            final_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=temp_link)
-            upload_to_cpanel(final_bytes, safe_name)
+    if not intro_text and not closing_text:
+        st.error("Please add content.")
+    else:
+        with st.spinner("Uploading to Server..."):
+            safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
             
-            st.success(f"✅ Live at: {temp_link}")
-            st.download_button("📥 Download Final PDF", final_bytes, safe_name)
-        else:
-            st.error("Upload failed. Check your FTP Secrets.")
+            # Step 1: Upload to get link
+            temp_link = upload_to_cpanel(preview_bytes, safe_name)
+            
+            if temp_link:
+                # Step 2: Regenerate with actual URL
+                final_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=temp_link)
+                upload_to_cpanel(final_bytes, safe_name)
+                
+                st.success(f"✅ Successfully Hosted at: {temp_link}")
+                st.download_button("📥 Download Final PDF", final_bytes, safe_name)
+            else:
+                st.error("Upload failed. Verify FTP Secrets.")
