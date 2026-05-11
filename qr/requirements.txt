@@ -2,5 +2,3 @@ streamlit
 fpdf2
 qrcode
 pillow
-cloudinary
-requests
