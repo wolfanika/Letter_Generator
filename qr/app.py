@@ -12,10 +12,14 @@ class CompanyPDF(FPDF):
         base_path = os.path.dirname(os.path.abspath(__file__))
         header_path = os.path.join(base_path, "header.png")
         if os.path.exists(header_path):
+            # Header image at the very top
             self.image(header_path, 10, 8, 190)
-        self.ln(45)
+        # Large gap after header to prevent overlap (55mm)
+        self.set_y(55)
 
     def footer(self):
+        # Position at 30mm from bottom
+        self.set_y(-30)
         base_path = os.path.dirname(os.path.abspath(__file__))
         footer_path = os.path.join(base_path, "footer.png")
         if os.path.exists(footer_path):
@@ -29,6 +33,7 @@ def upload_to_cpanel(file_bytes, filename):
         passwd = st.secrets["FTP_PASS"]
         
         session = ftplib.FTP(host, user, passwd)
+        # Ensure this matches your cPanel folder
         session.cwd('public_html/Letter') 
         
         bio = io.BytesIO(file_bytes)
@@ -45,14 +50,14 @@ st.set_page_config(page_title="UCPL Letter System", page_icon="📜")
 st.title("UCPL Official Letter System")
 
 ref_no = st.text_input("Reference Number", f"RUSL-UCPL-{datetime.now().year}-001")
-intro_text = st.text_area("Letter Introduction:", height=100)
+intro_text = st.text_area("Letter Introduction:", height=150)
 
 st.markdown("### 📊 Optional Table")
-table_data_raw = st.text_area("Paste Excel/Table Data here:", height=120, placeholder="Item\tQty\tPrice")
+table_data_raw = st.text_area("Paste Excel/Table Data here:", height=120, placeholder="SL No.\tDescription\tAmount (BDT)")
 
 closing_text = st.text_area("Letter Closing:", height=100)
 
-if st.button("🚀 Generate, Upload & Link QR"):
+if st.button("🚀 Generate & Upload"):
     if not ref_no:
         st.error("Please enter a Reference Number.")
     else:
@@ -60,82 +65,54 @@ if st.button("🚀 Generate, Upload & Link QR"):
             safe_filename = f"{ref_no.replace('/', '-')}.pdf"
             
             try:
-                # 1. Create the content PDF
-                pdf = CompanyPDF()
-                pdf.add_page()
-                pdf.set_font("Helvetica", size=11)
-                pdf.multi_cell(0, 7, intro_text)
-                pdf.ln(5)
-
+                # 1. Create temporary PDF to host and get URL
+                temp_pdf = CompanyPDF()
+                temp_pdf.add_page()
+                temp_pdf.set_font("Helvetica", size=11)
+                temp_pdf.multi_cell(0, 7, intro_text)
+                
                 if table_data_raw.strip():
                     rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_data_raw.strip().split('\n')]
-                    with pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
+                    with temp_pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
                         for data_row in rows:
                             row = table.row()
                             for cell in data_row: row.cell(cell.strip())
-                    pdf.ln(5)
-
-                pdf.multi_cell(0, 7, closing_text)
                 
-                # 2. Upload to Server to get the live link
-                pdf_bytes = pdf.output()
-                public_url = upload_to_cpanel(pdf_bytes, safe_filename)
+                temp_pdf.ln(5)
+                temp_pdf.multi_cell(0, 7, closing_text)
+                
+                # Upload
+                public_url = upload_to_cpanel(temp_pdf.output(), safe_filename)
 
                 if public_url:
-                    # 3. Create the FINAL PRINT VERSION with the QR Code
+                    # 2. Create FINAL PRINT VERSION with QR Code
                     final_pdf = CompanyPDF()
+                    # Set Auto Page Break to avoid footer overlap
+                    final_pdf.set_auto_page_break(auto=True, margin=35)
                     final_pdf.add_page()
                     
-                    # Generate the QR image pointing to the live URL
+                    # Generate QR
                     qr = qrcode.QRCode(box_size=10, border=1)
                     qr.add_data(public_url)
                     qr.make(fit=True)
                     qr_image_path = "temp_qr.png"
                     qr.make_image().save(qr_image_path)
                     
-                    # --- ADD QR TO PDF ---
-                    # Position: Top Right (x=165, y=50)
-                    final_pdf.image(qr_image_path, 165, 50, 30, 30) 
-                    final_pdf.set_font("Helvetica", 'I', 8)
-                    final_pdf.set_xy(165, 80)
-                    final_pdf.cell(30, 5, "Scan to Verify", align='C')
+                    # --- LAYOUT ---
+                    # QR Code at the top right
+                    final_pdf.image(qr_image_path, 165, 55, 28, 28)
                     
-                    # --- ADD TEXT CONTENT ---
-                    final_pdf.set_xy(10, 50) # Reset position for text
-                    final_pdf.set_font("Helvetica", 'B', 12)
-                    final_pdf.cell(0, 10, f"Ref: {ref_no}", new_x="LMARGIN", new_y="NEXT")
-                    final_pdf.set_font("Helvetica", 'B', 10)
-                    final_pdf.cell(0, 10, f"Date: {datetime.now().strftime('%d %B, %Y')}", new_x="LMARGIN", new_y="NEXT")
+                    # Reference and Date
+                    final_pdf.set_font("Helvetica", 'B', 11)
+                    final_pdf.cell(0, 7, f"Ref: {ref_no}", ln=1)
+                    final_pdf.cell(0, 7, f"Date: {datetime.now().strftime('%d %B, %Y')}", ln=1)
                     final_pdf.ln(10)
                     
+                    # Body Text
                     final_pdf.set_font("Helvetica", '', 11)
-                    if intro_text: 
+                    if intro_text:
                         final_pdf.multi_cell(0, 7, intro_text)
                         final_pdf.ln(5)
 
+                    # Table
                     if table_data_raw.strip():
-                        rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_data_raw.strip().split('\n')]
-                        with final_pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
-                            for data_row in rows:
-                                row = table.row()
-                                for cell in data_row: row.cell(cell.strip())
-                        final_pdf.ln(5)
-
-                    if closing_text: 
-                        final_pdf.multi_cell(0, 7, closing_text)
-
-                    st.success(f"✅ Hosted Successfully!")
-                    st.markdown(f"**Live Link:** [{public_url}]({public_url})")
-                    
-                    st.download_button(
-                        label="📥 Download Official PDF with QR",
-                        data=bytes(final_pdf.output()),
-                        file_name=safe_filename,
-                        mime="application/pdf"
-                    )
-                    
-                    if os.path.exists(qr_image_path):
-                        os.remove(qr_image_path)
-
-            except Exception as e:
-                st.error(f"Error: {e}")
