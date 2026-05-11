@@ -44,28 +44,39 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
     pdf.set_auto_page_break(auto=True, margin=40)
     pdf.add_page()
     
-    # 1. QR Code (Left Side - 22mm size)
+    # 1. POSITIONING THE TOP ROW (Ref, QR, Date)
+    # ------------------------------------------
+    current_y = 55
+    pdf.set_font("Times", 'B', 11)
+    
+    # Ref on the Left
+    pdf.set_y(current_y + 8) # Slight nudge down to align with QR center
+    pdf.set_x(10)
+    pdf.cell(60, 7, f"Ref. {ref_no}", border=0)
+    
+    # QR Code in the MIDDLE (22x22mm)
+    # Page width is 210mm. Center is 105mm. (105 - 11 = 94)
     if qr_url:
         qr = qrcode.QRCode(box_size=8, border=1)
         qr.add_data(qr_url)
         qr.make(fit=True)
         img_buf = io.BytesIO()
         qr.make_image().save(img_buf)
-        pdf.image(img_buf, 12, 55, 22, 22)
+        pdf.image(img_buf, 94, current_y, 22, 22)
     
-    # 2. Ref (Starts after QR) & Date (Far Right)
-    pdf.set_font("Times", 'B', 11)
-    pdf.set_y(55)
-    pdf.set_x(42) 
-    pdf.cell(80, 7, f"Ref. {ref_no}")
-    
+    # Date on the Right
+    pdf.set_y(current_y + 8) # Match Ref height
     pdf.set_x(140)
-    pdf.cell(50, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
-    pdf.ln(15) 
+    pdf.cell(60, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", border=0, align='R')
     
-    # 3. Text Body Content
+    # Move cursor down to start body text
+    pdf.set_y(current_y + 25) 
+    
+    # 2. BODY CONTENT
+    # ------------------------------------------
     pdf.set_font("Times", '', 11)
     if intro:
+        # write_html allows for <b> and <u> tags
         pdf.write_html(intro.replace('\n', '<br>'))
         pdf.ln(5)
     
@@ -84,37 +95,33 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
 
 # --- APP UI ---
 st.set_page_config(page_title="UCPL Letter System", page_icon="📜")
-st.title("📜 UCPL Letter Generator")
+st.title("📜 UCPL Official Letter Generator")
 
 ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
 
-# Text inputs
-intro_text = st.text_area("1. Introduction / Address / Subject:", height=200)
-table_data = st.text_area("2. Table Data (Optional - Paste from Excel):", height=100)
+intro_text = st.text_area("1. Intro / Address / Subject:", height=200)
+table_data = st.text_area("2. Table Data (Optional):", height=100)
 closing_text = st.text_area("3. Closing / Body / Signature:", height=200)
 
 if st.button("🚀 Generate, Host & Download"):
     if not intro_text and not closing_text:
-        st.warning("Please enter some content for the letter.")
+        st.warning("Please enter letter content.")
     else:
-        with st.spinner("Processing..."):
-            # Clean filename
+        with st.spinner("Processing official document..."):
             safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
             
-            # Phase 1: Temporary build to get the URL
+            # Phase 1: Upload placeholder to get URL
             temp_pdf = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
             public_link = upload_to_cpanel(temp_pdf, safe_name)
             
             if public_link:
-                # Phase 2: Final build with the actual working QR URL
+                # Phase 2: Create final with Center QR
                 final_pdf = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=public_link)
-                # Overwrite the one on server with the correct QR
                 upload_to_cpanel(final_pdf, safe_name)
                 
-                st.success(f"✅ Document is live at: {public_link}")
-                
+                st.success(f"✅ Live at: {public_link}")
                 st.download_button(
-                    label="📥 Download Final PDF",
+                    label="📥 Download Official PDF",
                     data=final_pdf,
                     file_name=safe_name,
                     mime="application/pdf"
