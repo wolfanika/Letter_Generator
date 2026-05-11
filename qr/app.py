@@ -5,6 +5,7 @@ import os
 import ftplib
 from datetime import datetime
 import io
+import base64
 
 # --- PDF CLASS SETUP ---
 class CompanyPDF(FPDF):
@@ -22,7 +23,6 @@ class CompanyPDF(FPDF):
         if os.path.exists(footer_path):
             self.image(footer_path, 10, 265, 190)
 
-# --- FTP UPLOAD LOGIC ---
 def upload_to_cpanel(file_bytes, filename):
     try:
         host = st.secrets["FTP_HOST"]
@@ -35,87 +35,80 @@ def upload_to_cpanel(file_bytes, filename):
         session.quit()
         return f"{st.secrets['DOMAIN_URL']}{filename}"
     except Exception as e:
-        st.error(f"FTP Upload Failed: {e}")
         return None
 
-# --- APP UI ---
-st.set_page_config(page_title="UCPL Letter System", page_icon="📜")
-st.title("UCPL Official Letter System")
+# --- PDF GENERATOR FUNCTION ---
+def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
+    pdf = CompanyPDF()
+    pdf.set_auto_page_break(auto=True, margin=40)
+    pdf.add_page()
+    
+    # 1. QR Code on the LEFT (if URL provided)
+    if qr_url:
+        qr = qrcode.QRCode(box_size=8, border=1)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        qr_img = io.BytesIO()
+        qr.make_image().save(qr_img)
+        pdf.image(qr_img, 12, 55, 22, 22)
+    
+    # 2. Ref (Moved right to avoid QR) and Date (Far Right)
+    pdf.set_font("Times", 'B', 11)
+    pdf.set_y(55)
+    pdf.set_x(40) # Start Ref after the QR code
+    pdf.cell(80, 7, f"Ref. {ref_no}")
+    
+    pdf.set_x(140)
+    pdf.cell(55, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
+    pdf.ln(12)
+    
+    # 3. Content
+    pdf.set_font("Times", '', 11)
+    if intro:
+        pdf.write_html(intro.replace('\n', '<br>'))
+        pdf.ln(5)
+    
+    if table_raw.strip():
+        rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_raw.strip().split('\n')]
+        with pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
+            for d_row in rows:
+                r = table.row()
+                for cell in d_row: r.cell(cell.strip())
+        pdf.ln(5)
+        
+    if closing:
+        pdf.write_html(closing.replace('\n', '<br>'))
+        
+    return pdf.output()
 
-ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/")
+# --- STREAMLIT UI ---
+st.set_page_config(page_title="UCPL Letter Editor", layout="wide")
 
-st.markdown("### 1. Introduction Text")
-intro_text = st.text_area("Paste everything before the table:", height=180)
+col_input, col_preview = st.columns([1, 1])
 
-st.markdown("### 2. Table (Optional)")
-table_data_raw = st.text_area("Paste table cells here:", height=100)
+with col_input:
+    st.title("📜 Letter Editor")
+    ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
+    intro_text = st.text_area("Introduction Content:", height=180, value="To,\nChief Executive Officer (CEO)\nUnited Chattogram Power Ltd. (UCPL)")
+    table_data = st.text_area("Table Data (Optional):", height=100, placeholder="SL No.\tDescription\tAmount")
+    closing_text = st.text_area("Closing Content:", height=150, value="Dear Sir,\nPlease recall that...")
 
-st.markdown("### 3. Closing Text")
-closing_text = st.text_area("Paste everything after the table:", height=150)
+    generate_btn = st.button("🚀 Upload to Website & Finalize")
 
-if st.button("🚀 Generate & Upload Official Letter"):
-    if not intro_text and not closing_text:
-        st.error("Please enter letter content.")
-    else:
-        with st.spinner("Uploading and generating QR..."):
-            safe_filename = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
-            
-            try:
-                def build_pdf_content(pdf_obj):
-                    pdf_obj.set_font("Times", size=11)
-                    if intro_text:
-                        pdf_obj.write_html(intro_text.replace('\n', '<br>'))
-                        pdf_obj.ln(5)
-                    if table_data_raw.strip():
-                        rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_data_raw.strip().split('\n')]
-                        with pdf_obj.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
-                            for d_row in rows:
-                                r = table.row()
-                                for cell in d_row: r.cell(cell.strip())
-                        pdf_obj.ln(5)
-                    if closing_text:
-                        pdf_obj.write_html(closing_text.replace('\n', '<br>'))
+# --- LIVE PREVIEW LOGIC ---
+# We use a fake URL for the preview QR so it shows the layout
+preview_pdf_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
+base64_pdf = base64.b64encode(preview_pdf_bytes).decode('utf-8')
+pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="900" type="application/pdf"></iframe>'
 
-                # --- STEP 1: HOSTING PDF ---
-                pdf_host = CompanyPDF()
-                pdf_host.add_page()
-                build_pdf_content(pdf_host)
-                public_url = upload_to_cpanel(pdf_host.output(), safe_filename)
+with col_preview:
+    st.markdown("### 🖥️ Live Preview")
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
-                if public_url:
-                    # --- STEP 2: FINAL PRINT PDF ---
-                    final_pdf = CompanyPDF()
-                    final_pdf.set_auto_page_break(auto=True, margin=40)
-                    final_pdf.add_page()
-                    
-                    # Generate Smaller QR (22x22mm)
-                    qr = qrcode.QRCode(box_size=8, border=1)
-                    qr.add_data(public_url)
-                    qr.make(fit=True)
-                    qr_img = "temp_qr.png"
-                    qr.make_image().save(qr_img)
-                    
-                    # Place QR further to the right edge
-                    final_pdf.image(qr_img, 175, 55, 22, 22)
-                    
-                    # --- HEADERS ---
-                    final_pdf.set_font("Times", 'B', 11)
-                    # Ref on left
-                    final_pdf.cell(100, 7, f"Ref. {ref_no}")
-                    
-                    # Date on right, but ending before the QR code starts
-                    final_pdf.set_x(120) 
-                    final_pdf.cell(50, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
-                    final_pdf.ln(12) # Extra space to clear the QR height
-                    
-                    # Add Content
-                    build_pdf_content(final_pdf)
-
-                    st.success("✅ Hosted Successfully!")
-                    st.download_button("📥 Download Final PDF", bytes(final_pdf.output()), safe_filename)
-                    
-                    if os.path.exists(qr_img):
-                        os.remove(qr_img)
-
-            except Exception as e:
-                st.error(f"Error: {e}")
+# --- FINAL UPLOAD LOGIC ---
+if generate_btn:
+    with st.spinner("Uploading to Server..."):
+        safe_filename = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
+        
+        # Step 1: Create a temporary PDF to get the live URL
+        initial_pdf = create_pdf(ref_no, intro_text, table_data, closing
