@@ -5,7 +5,6 @@ import os
 import ftplib
 from datetime import datetime
 import io
-import base64
 
 # --- PDF CLASS SETUP ---
 class CompanyPDF(FPDF):
@@ -35,7 +34,8 @@ def upload_to_cpanel(file_bytes, filename):
         session.storbinary(f"STOR {filename}", bio)
         session.quit()
         return f"{st.secrets['DOMAIN_URL']}{filename}"
-    except Exception:
+    except Exception as e:
+        st.error(f"FTP Error: {e}")
         return None
 
 # --- PDF GENERATOR ---
@@ -44,7 +44,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
     pdf.set_auto_page_break(auto=True, margin=40)
     pdf.add_page()
     
-    # 1. QR Code (Left Side)
+    # 1. QR Code (Left Side - 22mm size)
     if qr_url:
         qr = qrcode.QRCode(box_size=8, border=1)
         qr.add_data(qr_url)
@@ -63,7 +63,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
     pdf.cell(50, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
     pdf.ln(15) 
     
-    # 3. Text Body
+    # 3. Text Body Content
     pdf.set_font("Times", '', 11)
     if intro:
         pdf.write_html(intro.replace('\n', '<br>'))
@@ -82,47 +82,40 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
         
     return bytes(pdf.output())
 
-# --- APP LAYOUT ---
-st.set_page_config(page_title="UCPL Letter Editor", layout="wide")
+# --- APP UI ---
+st.set_page_config(page_title="UCPL Letter System", page_icon="📜")
+st.title("📜 UCPL Letter Generator")
 
-col_input, col_preview = st.columns([1, 1.2])
+ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
 
-with col_input:
-    st.title("📜 Letter Editor")
-    ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
-    intro_text = st.text_area("1. Intro:", height=150, value="To,\nCEO, UCPL")
-    table_data = st.text_area("2. Table:", height=100)
-    closing_text = st.text_area("3. Closing:", height=150)
-    generate_btn = st.button("🚀 Finalize & Upload")
+# Text inputs
+intro_text = st.text_area("1. Introduction / Address / Subject:", height=200)
+table_data = st.text_area("2. Table Data (Optional - Paste from Excel):", height=100)
+closing_text = st.text_area("3. Closing / Body / Signature:", height=200)
 
-# --- BULLETPROOF PREVIEW ---
-try:
-    # Generate the bytes
-    preview_pdf = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
-    # Convert to base64
-    b64 = base64.b64encode(preview_pdf).decode('utf-8')
-    
-    # Fixed PDF Display logic
-    pdf_html = f'<object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="900px"><p>Your browser is blocking the preview. <a href="data:application/pdf;base64,{b64}" download="preview.pdf">Download Preview</a> instead.</p></object>'
-
-    with col_preview:
-        st.markdown("### 🖥️ Live Preview")
-        st.write(f"Ref: {ref_no}") # Small indicator to show app is reacting
-        st.components.v1.html(pdf_html, height=910)
-        
-except Exception as e:
-    with col_preview:
-        st.error(f"Preview crashed: {e}")
-
-# --- FINAL ACTIONS ---
-if generate_btn:
-    with st.spinner("Processing..."):
-        safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
-        # Step 1: Upload to get link
-        link = upload_to_cpanel(preview_pdf, safe_name)
-        if link:
-            # Step 2: Final version with working QR
-            final_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=link)
-            upload_to_cpanel(final_bytes, safe_name)
-            st.success(f"File live: {link}")
-            st.download_button("📥 Download PDF", final_bytes, safe_name, "application/pdf")
+if st.button("🚀 Generate, Host & Download"):
+    if not intro_text and not closing_text:
+        st.warning("Please enter some content for the letter.")
+    else:
+        with st.spinner("Processing..."):
+            # Clean filename
+            safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
+            
+            # Phase 1: Temporary build to get the URL
+            temp_pdf = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
+            public_link = upload_to_cpanel(temp_pdf, safe_name)
+            
+            if public_link:
+                # Phase 2: Final build with the actual working QR URL
+                final_pdf = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=public_link)
+                # Overwrite the one on server with the correct QR
+                upload_to_cpanel(final_pdf, safe_name)
+                
+                st.success(f"✅ Document is live at: {public_link}")
+                
+                st.download_button(
+                    label="📥 Download Final PDF",
+                    data=final_pdf,
+                    file_name=safe_name,
+                    mime="application/pdf"
+                )
