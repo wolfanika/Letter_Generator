@@ -14,10 +14,6 @@ class CompanyPDF(FPDF):
         header_path = os.path.join(base_path, "header.png")
         if os.path.exists(header_path):
             self.image(header_path, 10, 8, 190)
-        else:
-            # Fallback if image is missing so the app doesn't crash
-            self.set_font("Helvetica", "I", 8)
-            self.cell(0, 10, "Header image missing", align="C")
         self.set_y(55)
 
     def footer(self):
@@ -55,6 +51,7 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
         qr.make(fit=True)
         img_buf = io.BytesIO()
         qr.make_image().save(img_buf)
+        # Position: Left=12, Top=55
         pdf.image(img_buf, 12, 55, 22, 22)
     
     # 2. Ref & Date
@@ -73,7 +70,6 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
         pdf.ln(5)
     
     if table_raw.strip():
-        # Corrected: ensure it refers to the input variable
         rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_raw.strip().split('\n')]
         with pdf.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
             for d_row in rows:
@@ -84,7 +80,8 @@ def create_pdf(ref_no, intro, table_raw, closing, qr_url=None):
     if closing:
         pdf.write_html(closing.replace('\n', '<br>'))
         
-    return pdf.output()
+    # Return as standard bytes
+    return bytes(pdf.output())
 
 # --- STREAMLIT APP ---
 st.set_page_config(page_title="UCPL Letter System", layout="wide")
@@ -94,30 +91,50 @@ col_input, col_preview = st.columns([1, 1.2])
 with col_input:
     st.title("📜 Letter Editor")
     ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/001")
-    intro_text = st.text_area("1. Intro:", height=150, value="To,\nCEO, UCPL")
-    table_data = st.text_area("2. Table Data:", height=100)
-    closing_text = st.text_area("3. Closing:", height=150)
+    intro_text = st.text_area("1. Intro (Address/Subject):", height=150, value="To,\nCEO, UCPL")
+    table_data = st.text_area("2. Table (Excel Paste):", height=100)
+    closing_text = st.text_area("3. Closing (Body):", height=150)
     generate_btn = st.button("🚀 Upload & Finalize")
 
-# --- LIVE PREVIEW (Uses Embed for better stability) ---
+# --- LIVE PREVIEW (Stabilized) ---
 try:
     preview_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url="https://sigma-royal.com")
     base64_pdf = base64.b64encode(preview_bytes).decode('utf-8')
-    pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}#toolbar=0" width="100%" height="900" type="application/pdf">'
+    # Using iframe with base64 data stream
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}#toolbar=0" width="100%" height="900" style="border:none;"></iframe>'
     
     with col_preview:
         st.markdown("### 🖥️ Live Preview")
         st.markdown(pdf_display, unsafe_allow_html=True)
 except Exception as e:
     with col_preview:
-        st.error(f"Preview Error: {e}")
+        st.error(f"Preview Logic Error: {e}")
 
+# --- UPLOAD & DOWNLOAD ACTION ---
 if generate_btn:
-    with st.spinner("Uploading..."):
-        safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
-        temp_link = upload_to_cpanel(preview_bytes, safe_name)
-        if temp_link:
-            final_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=temp_link)
-            upload_to_cpanel(final_bytes, safe_name)
-            st.success(f"Live at: {temp_link}")
-            st.download_button("📥 Download PDF", final_bytes, safe_name)
+    if not intro_text and not closing_text:
+        st.error("Letter body cannot be empty.")
+    else:
+        with st.spinner("Uploading and generating final QR..."):
+            safe_name = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
+            
+            # Step 1: Upload preview to get the link
+            temp_link = upload_to_cpanel(preview_bytes, safe_name)
+            
+            if temp_link:
+                # Step 2: Regenerate with actual URL
+                final_bytes = create_pdf(ref_no, intro_text, table_data, closing_text, qr_url=temp_link)
+                # Re-upload the final one
+                upload_to_cpanel(final_bytes, safe_name)
+                
+                st.success(f"✅ Live at: {temp_link}")
+                
+                # FIXED: Ensuring data is passed as standard bytes
+                st.download_button(
+                    label="📥 Download Official PDF",
+                    data=final_bytes,
+                    file_name=safe_name,
+                    mime="application/pdf"
+                )
+            else:
+                st.error("FTP Upload failed. Please check your secrets.")
