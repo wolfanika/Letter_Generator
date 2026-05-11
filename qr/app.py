@@ -38,92 +38,98 @@ def upload_to_cpanel(file_bytes, filename):
         st.error(f"FTP Upload Failed: {e}")
         return None
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title="UCPL Letter System", page_icon="📜", layout="wide")
-st.title("UCPL High-Fidelity Letter System")
+# --- APP UI ---
+st.set_page_config(page_title="UCPL Letter System", page_icon="📜")
+st.title("UCPL Official Letter System")
 
-# Formatting Sidebar
-with st.sidebar:
-    st.header("Document Settings")
-    font_choice = st.selectbox("Font Family", ["Arial", "Times", "Courier"])
-    base_size = st.slider("Font Size", 8, 14, 11)
-    st.markdown("""
-    **Formatting Shortcuts:**
-    - `<u>Underlined Text</u>`
-    - `<b>Bold Text</b>`
-    - `<center>Centered Text</center>`
-    """)
-
-# Inputs
+# Simple Inputs
 ref_no = st.text_input("Reference Number", f"RUSL/UCPL/Update/{datetime.now().year}/")
-body_content = st.text_area("Paste Letter Content (Use <b> and <u> tags for styling):", height=400)
 
-st.markdown("### 📊 Optional Table")
-table_data_raw = st.text_area("Paste Table Data (Tabs or Commas):", height=100)
+st.markdown("### 1. Introduction Text")
+intro_text = st.text_area("Paste everything before the table (Address, Subject, Dear Sir, etc.):", height=200)
 
-if st.button("🚀 Generate Official Letter & Host"):
-    if not body_content:
-        st.error("Letter content cannot be empty.")
+st.markdown("### 2. Table (Optional)")
+table_data_raw = st.text_area("Paste table cells here (Leave empty if no table needed):", height=100)
+
+st.markdown("### 3. Closing Text")
+closing_text = st.text_area("Paste everything after the table (Words in words, Signature, etc.):", height=150)
+
+if st.button("🚀 Generate & Upload Official Letter"):
+    if not intro_text and not closing_text:
+        st.error("Please enter some content for the letter.")
     else:
-        with st.spinner("Rendering High-Fidelity PDF..."):
+        with st.spinner("Processing..."):
             safe_filename = f"{ref_no.replace('/', '-')}.pdf".replace(" ", "_")
             
             try:
-                def render_content(pdf_obj, body, table_raw):
-                    pdf_obj.set_font(font_choice, size=base_size)
+                def build_pdf_content(pdf_obj):
+                    # Set standard professional font
+                    pdf_obj.set_font("Times", size=11)
                     
-                    # Convert newlines to HTML breaks and render
-                    html_content = body.replace('\n', '<br>')
-                    pdf_obj.write_html(html_content)
+                    # 1. Intro
+                    if intro_text:
+                        # Convert newlines to HTML breaks so formatting is preserved
+                        pdf_obj.write_html(intro_text.replace('\n', '<br>'))
+                        pdf_obj.ln(5)
                     
-                    if table_raw.strip():
-                        pdf_obj.ln(10)
-                        rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_raw.strip().split('\n')]
-                        # Use a bold font for table headers if first row
-                        with pdf_obj.table(borders_layout="HORIZONTAL_LINES", line_height=base_size*0.8) as table:
+                    # 2. Table
+                    if table_data_raw.strip():
+                        rows = [line.split('\t') if '\t' in line else line.split(',') for line in table_data_raw.strip().split('\n')]
+                        with pdf_obj.table(borders_layout="HORIZONTAL_LINES", line_height=8) as table:
                             for d_row in rows:
                                 r = table.row()
                                 for cell in d_row: r.cell(cell.strip())
-                
-                # 1. Create Host PDF
+                        pdf_obj.ln(5)
+                    
+                    # 3. Closing
+                    if closing_text:
+                        pdf_obj.write_html(closing_text.replace('\n', '<br>'))
+
+                # --- STEP 1: HOSTING PDF (To get the link for the QR) ---
                 pdf_host = CompanyPDF()
                 pdf_host.add_page()
-                render_content(pdf_host, body_content, table_data_raw)
+                build_pdf_content(pdf_host)
                 
-                # Upload
                 public_url = upload_to_cpanel(pdf_host.output(), safe_filename)
 
                 if public_url:
-                    # 2. Create Final Document with QR
+                    # --- STEP 2: FINAL PRINT PDF WITH QR ---
                     final_pdf = CompanyPDF()
                     final_pdf.set_auto_page_break(auto=True, margin=40)
                     final_pdf.add_page()
                     
-                    # QR Code (No label)
+                    # Generate QR image
                     qr = qrcode.QRCode(box_size=10, border=1)
                     qr.add_data(public_url)
                     qr.make(fit=True)
                     qr_img = "temp_qr.png"
                     qr.make_image().save(qr_img)
                     
-                    # Position QR top right
+                    # Place QR top right
                     final_pdf.image(qr_img, 165, 55, 28, 28)
                     
-                    # Reference and Date Header
-                    final_pdf.set_font(font_choice, 'B', base_size)
+                    # Add Ref (Left) & Date (Right)
+                    final_pdf.set_font("Times", 'B', 11)
                     final_pdf.cell(100, 7, f"Ref. {ref_no}")
-                    final_pdf.set_x(-60)
+                    final_pdf.set_x(-65)
                     final_pdf.cell(50, 7, f"Date: {datetime.now().strftime('%B %d, %Y')}", align='R', ln=1)
                     final_pdf.ln(10)
                     
-                    # Main Body
-                    render_content(final_pdf, body_content, table_data_raw)
+                    # Build all text blocks onto the final page
+                    build_pdf_content(final_pdf)
 
-                    st.success("✅ Document generated and hosted successfully!")
-                    st.download_button("📥 Download Official Signed PDF", bytes(final_pdf.output()), safe_filename)
+                    st.success("✅ Letter generated, hosted, and QR linked!")
+                    st.info(f"Public Link: {public_url}")
+                    
+                    st.download_button(
+                        label="📥 Download Official PDF",
+                        data=bytes(final_pdf.output()),
+                        file_name=safe_filename,
+                        mime="application/pdf"
+                    )
                     
                     if os.path.exists(qr_img):
                         os.remove(qr_img)
 
             except Exception as e:
-                st.error(f"Rendering Error: {e}")
+                st.error(f"Error: {e}")
